@@ -1,24 +1,27 @@
-# fly.toml — Fly.io app configuration
-# Generated for the Weekly Health Tracker API
+# fly.toml app configuration file generated for weekly-health-tracker on 2026-05-08T10:50:34-07:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
 
-app = "weekly-health-tracker"
-primary_region = "iad"
+app = 'weekly-health-tracker'
+primary_region = 'iad'
 
 [build]
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = "stop"
+  auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 0
 
   [http_service.concurrency]
-    type = "requests"
+    type = 'requests'
     hard_limit = 100
     soft_limit = 80
 
 [[vm]]
-  memory = "512mb"
-  cpu_kind = "shared"
+  memory = '512mb'
+  cpu_kind = 'shared'
   cpus = 1
+  memory_mb = 512

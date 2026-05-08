@@ -10,6 +10,7 @@ raises EnvironmentError immediately rather than failing at the first request.
 """
 
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -21,16 +22,21 @@ from data_store import get_user_metrics
 from response_assembler import assemble
 
 # ---------------------------------------------------------------------------
-# Startup guard — fail fast if the API key is missing
+# Startup guard — fail fast if the API key is missing.
+# Using lifespan so uvicorn binds the port before the check runs;
+# this prevents Fly.io from reporting "app not listening on 0.0.0.0:8080".
 # ---------------------------------------------------------------------------
 
-if not os.environ.get("DEEPSEEK_API_KEY"):
-    raise EnvironmentError(
-        "DEEPSEEK_API_KEY environment variable is not set. "
-        "Set it before starting the server."
-    )
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if not os.environ.get("DEEPSEEK_API_KEY"):
+        raise EnvironmentError(
+            "DEEPSEEK_API_KEY environment variable is not set. "
+            "Set it before starting the server."
+        )
+    yield
 
-app = FastAPI(title="Weekly Health Tracker")
+app = FastAPI(title="Weekly Health Tracker", lifespan=lifespan)
 
 
 # ---------------------------------------------------------------------------
