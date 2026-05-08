@@ -17,7 +17,7 @@ import os
 from typing import Optional
 
 from langchain_community.chat_models import ChatOpenAI
-from langchain_core.runnables import RunnableParallel
+from langchain_core.runnables import RunnableLambda, RunnableParallel
 
 from data_store import get_optimal_targets, get_user_metrics
 from prompt_registry import INTENT_LABELS, PROMPT_REGISTRY
@@ -100,16 +100,16 @@ def execute_chains(
         ordered_keys.append(key)
 
         prompt = PROMPT_REGISTRY[intent]
-        # LCEL chain: format the prompt then call the LLM
         chain = prompt | llm
 
-        # Bind the input variables so RunnableParallel receives a single
-        # shared input dict and each chain extracts what it needs.
-        chains[key] = chain.bind(
-            user_metrics=str(user_metrics),
-            optimal_targets=str(optimal_targets),
-            focus_metric=focus_metric,
-        )
+        # Capture inputs in a closure so each chain ignores RunnableParallel's
+        # shared input dict and uses its own pre-filled variables instead.
+        captured_input = {
+            "user_metrics": str(user_metrics),
+            "optimal_targets": str(optimal_targets),
+            "focus_metric": focus_metric,
+        }
+        chains[key] = RunnableLambda(lambda _inp, c=chain, ci=captured_input: c.invoke(ci))
 
     # Run all chains concurrently
     parallel = RunnableParallel(**chains)
