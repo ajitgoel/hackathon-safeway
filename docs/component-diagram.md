@@ -1,27 +1,39 @@
 ```mermaid
-C4Component
-    title Component diagram — LLM-Powered Weekly Health Tracker
+flowchart TB
+    subgraph API_LAYER["API layer · FastAPI"]
+        API["api
+        GET /metrics/{user_id}
+        POST /chat"]
+    end
 
-    Container_Boundary(api_layer, "API layer (FastAPI)") {
-        Component(api, "api", "FastAPI", "GET /metrics/{user_id}\nPOST /chat")
-    }
+    subgraph CORE["Core modules · Python / LangChain"]
+        direction LR
+        CL["classifier
+        raw DeepSeek call"]
+        PR["prompt_registry
+        5 ChatPromptTemplates"]
+        CE["chain_executor
+        RunnableParallel"]
+        RA["response_assembler
+        pure string logic"]
+        DS[("data_store
+        in-memory")]
+    end
 
-    Container_Boundary(core, "Core modules (Python)") {
-        Component(classifier, "classifier", "Python + DeepSeek", "Validates & decomposes\nprompt into sub-requests")
-        Component(prompt_reg, "prompt_registry", "LangChain", "5 ChatPromptTemplates\nkeyed by intent")
-        Component(chain_exec, "chain_executor", "LangChain", "Builds LLMChains,\nruns RunnableParallel")
-        Component(assembler, "response_assembler", "Python", "Formats labelled\nresponse blocks")
-        Component(data_store, "data_store", "Python", "Hardcoded user metrics\n& optimal targets")
-    }
+    EXT(["DeepSeek API
+    deepseek-chat"])
 
-    System_Ext(deepseek, "DeepSeek API", "deepseek-chat model\nOpenAI-compatible endpoint")
+    API -->|"get_user_metrics()"| DS
+    API -->|"user_id + prompt"| CL
+    API -->|"sub_requests"| CE
+    API -->|"results list"| RA
 
-    Rel(api, data_store, "get_user_metrics()")
-    Rel(api, classifier, "classify(user_id, prompt)")
-    Rel(api, chain_exec, "execute(sub_requests)")
-    Rel(api, assembler, "assemble(results)")
-    Rel(classifier, deepseek, "Raw HTTP POST")
-    Rel(chain_exec, prompt_reg, "lookup intent")
-    Rel(chain_exec, data_store, "get_user_metrics()\nget_optimal_targets()")
-    Rel(chain_exec, deepseek, "LangChain ChatOpenAI\nbase_url=api.deepseek.com")
+    CL -->|"raw HTTP"| EXT
+
+    CE -->|"lookup intent"| PR
+    CE -->|"get metrics + targets"| DS
+    CE -->|"ChatOpenAI"| EXT
+
+    style EXT fill:#FAECE7,stroke:#D85A30,color:#4A1B0C
+    style API fill:#EAF3DE,stroke:#639922,color:#173404
 ```

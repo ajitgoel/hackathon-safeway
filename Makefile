@@ -1,9 +1,18 @@
-.PHONY: run test test-file lint install deploy secrets logs status help
+.PHONY: run run-debug test test-file lint install docker-build docker-run deploy secrets logs status smoke-metrics smoke-chat smoke-compound smoke-invalid help
+
+# Load .env if it exists — exports all vars into the make environment
+ifneq (,$(wildcard .env))
+  include .env
+  export
+endif
 
 # ── Local development ────────────────────────────────────────────────────────
 
 run:
 	uvicorn api:app --reload --host 0.0.0.0 --port 8000
+
+run-debug:
+	uvicorn api:app --reload --host 0.0.0.0 --port 8000 --log-level debug
 
 test:
 	pytest tests/ -v
@@ -75,13 +84,14 @@ help:
 	@echo "  Local development"
 	@echo "    make install              Install dependencies from requirements.txt"
 	@echo "    make run                  Start the API server with hot reload (port 8000)"
+	@echo "    make run-debug            Same but with verbose logging"
 	@echo "    make test                 Run the full test suite"
 	@echo "    make test-file f=<path>   Run a single test file"
 	@echo "    make lint                 Run ruff linter"
 	@echo ""
 	@echo "  Docker"
 	@echo "    make docker-build         Build the Docker image"
-	@echo "    make docker-run           Run the container (requires DEEPSEEK_API_KEY in env)"
+	@echo "    make docker-run           Run the container (reads DEEPSEEK_API_KEY from .env)"
 	@echo ""
 	@echo "  Fly.io"
 	@echo "    make deploy               Deploy to Fly.io"

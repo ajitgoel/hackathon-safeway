@@ -74,6 +74,7 @@ def chat(request: ChatRequest):
         200 (valid):   {"valid": true,  "blocks": [{"label": str, "response": str}]}
         200 (invalid): {"valid": false, "reason": str}
         404:           {"error": "User not found"} for an unknown user_id.
+        500:           {"error": str} for unexpected upstream failures.
     """
     # Validate user exists before calling the LLM
     try:
@@ -82,13 +83,19 @@ def chat(request: ChatRequest):
         return JSONResponse(status_code=404, content={"error": "User not found"})
 
     # Classify — returns immediately with reason if invalid
-    classification = classify(request.user_id, request.prompt)
+    try:
+        classification = classify(request.user_id, request.prompt)
+    except (EnvironmentError, RuntimeError) as exc:
+        return JSONResponse(status_code=500, content={"error": str(exc)})
 
     if not classification["valid"]:
         return {"valid": False, "reason": classification["reason"]}
 
     # Execute chains concurrently for each sub-request
-    chain_results = execute_chains(request.user_id, classification["sub_requests"])
+    try:
+        chain_results = execute_chains(request.user_id, classification["sub_requests"])
+    except (EnvironmentError, ValueError, RuntimeError) as exc:
+        return JSONResponse(status_code=500, content={"error": str(exc)})
 
     # Assemble into labelled blocks (assembler result is for internal use;
     # the API returns the structured blocks list, not the flat string)
