@@ -10,21 +10,17 @@ Public interface:
 
 import json
 import os
-from typing import Optional
 
 import requests
 
 # ---------------------------------------------------------------------------
-# Types (plain dicts — no Pydantic dependency required here)
+# Constants
 # ---------------------------------------------------------------------------
-
-# SubRequest = {"intent": str, "focus_metric": str | None}
-# ClassifierResult = {"valid": bool, "reason": str | None, "sub_requests": list[SubRequest]}
 
 VALID_INTENTS = frozenset(
     {
         "performance_summary",
-        "next_week_plan",
+        "next_period_plan",
         "single_metric_lookup",
         "metric_comparison",
         "multi_metric_deep_dive",
@@ -39,39 +35,59 @@ DEEPSEEK_MODEL = "deepseek-chat"
 # ---------------------------------------------------------------------------
 
 _SYSTEM_PROMPT = """\
-You are a classifier for a personal weekly health tracker app.
+You are a classifier for a personal health tracker app.
 
-The app only knows about a single user's health data for the CURRENT week.
+DATA AVAILABLE: The app stores exactly 30 days of daily health data for the current user.
+Any request for data within the last 30 days is valid. "Last week" (7 days), "last 2 weeks"
+(14 days), and "last month" (30 days) are ALL valid requests — do NOT reject them.
+Only reject requests that ask for data older than 30 days (e.g. "6 months ago", "last year").
+
 Metrics available: sleep (hours), steps, resting_hr (bpm), water (litres), workouts (count), hrv (ms).
 
 Your job is to classify the user's message and return ONLY a JSON object — no preamble, no explanation, no markdown fences.
 
 Valid intents:
-- performance_summary     : overall review of last week's metrics vs targets
-- next_week_plan          : prioritised action plan for the coming week
+- performance_summary     : overall review of metrics vs targets for a period
+- next_period_plan        : prioritised action plan for the coming period
 - single_metric_lookup    : retrieve the value of one specific metric
 - metric_comparison       : compare one specific metric against its optimal target
 - multi_metric_deep_dive  : comprehensive breakdown of all metrics in detail
 
+Duration extraction rules (apply per sub-request):
+- "last week"              → duration_days: 7   (VALID — within 30-day window)
+- "last 2 weeks"           → duration_days: 14  (VALID — within 30-day window)
+- "last month"             → duration_days: 30  (VALID — within 30-day window)
+- No duration mentioned    → duration_days: 30  (default, always valid)
+- More than 30 days        → valid: false (out of range — the only out-of-range case)
+
 Rejection rules (set valid=false):
 - Off-topic questions unrelated to the user's own health metrics
-- Requests for historical data beyond the current week
+- Requests for data strictly older than 30 days (e.g. "6 months ago", "last year", "2 months ago")
 - Requests about another user's data
+
+IMPORTANT: "last week", "last 2 weeks", and "last month" are all within the 30-day window.
+Never reject these as out of range.
 
 Output schema (strict JSON, no extra keys):
 {
   "valid": true | false,
   "reason": null | "<human-readable rejection reason>",
   "sub_requests": [
-    {"intent": "<intent>", "focus_metric": "<metric_name> | null"}
+    {
+      "intent": "<intent>",
+      "focus_metric": "<metric_name> | null",
+      "duration_days": <integer>
+    }
   ]
 }
 
 Rules:
 - If valid=false, sub_requests must be an empty array and reason must be a non-empty string.
 - If valid=true, reason must be null and sub_requests must contain at least one item.
-- A compound message (e.g. "How did I do AND what's my plan?") produces multiple sub_requests.
+- A compound message (e.g. "How did I do last week AND what's my plan for next month?") produces
+  multiple sub_requests, each with their own duration_days extracted from that part of the message.
 - focus_metric is only non-null for single_metric_lookup and metric_comparison intents.
+- duration_days must always be an integer (never null or a string).
 - Return ONLY the JSON object. No markdown, no code fences, no extra text.
 """
 
@@ -91,7 +107,7 @@ def classify(user_id: str, prompt: str) -> dict:
         A dict with keys:
             valid        (bool)
             reason       (str | None)
-            sub_requests (list of {intent: str, focus_metric: str | None})
+            sub_requests (list of {intent: str, focus_metric: str | None, duration_days: int})
 
     Raises:
         EnvironmentError: If DEEPSEEK_API_KEY is not set.

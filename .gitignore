@@ -51,3 +51,5 @@ coverage.xml
 
 # Logs
 *.log
+graphify-out/
+tests/__pycache__/

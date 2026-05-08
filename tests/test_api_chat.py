@@ -2,29 +2,39 @@
 Integration tests for POST /chat.
 
 The full pipeline (classifier → chain_executor → response_assembler) is tested
-with chain_executor mocked so no real LLM calls are made. The classifier is also
-mocked to return controlled responses.
+with classifier and chain_executor mocked so no real LLM calls are made.
 
 Covers:
 - Valid single-intent request returns {valid: true, blocks: [one block]}
 - Valid compound request returns {valid: true, blocks: [multiple blocks in order]}
 - Invalid request returns {valid: false, reason: "..."} without calling chain_executor
 - Unknown user_id returns 404
+- classifier is not called for an unknown user_id
+- chain_executor is not called for an invalid prompt
+- chain_executor receives the correct user_id and sub_requests
 """
 
 import os
-import pytest
 
-# Set the API key before importing api so the startup guard passes
+# Set the API key before importing api so the startup guard passes.
 os.environ.setdefault("DEEPSEEK_API_KEY", "test-key")
 
 from unittest.mock import patch, MagicMock
+import pytest
 from fastapi.testclient import TestClient
 
 import api as api_module
 from api import app
 
-client = TestClient(app)
+
+# ---------------------------------------------------------------------------
+# Shared client fixture
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def client():
+    with TestClient(app) as c:
+        yield c
 
 
 # ---------------------------------------------------------------------------
@@ -39,10 +49,11 @@ def _invalid_classification(reason: str) -> dict:
     return {"valid": False, "reason": reason, "sub_requests": []}
 
 
-def _chain_results(intents_and_labels: list[tuple[str, str]]) -> list[dict]:
+def _chain_results(items: list[tuple[str, str]]) -> list[dict]:
+    """Build a chain_executor return value from (intent, label) pairs."""
     return [
         {"intent": intent, "label": label, "response": f"Response for {label}"}
-        for intent, label in intents_and_labels
+        for intent, label in items
     ]
 
 
@@ -51,133 +62,110 @@ def _chain_results(intents_and_labels: list[tuple[str, str]]) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 class TestChatValidSingleIntent:
-    def test_status_200(self):
-        classification = _valid_classification(
-            [{"intent": "performance_summary", "focus_metric": None}]
-        )
-        chains = _chain_results([("performance_summary", "Performance Summary")])
+    _sub_requests = [
+        {"intent": "performance_summary", "focus_metric": None, "duration_days": 7}
+    ]
+    _chains = _chain_results([
+        ("performance_summary", "Performance Summary (Last 7 Days)")
+    ])
 
-        with patch.object(api_module, "classify", return_value=classification), \
-             patch.object(api_module, "execute_chains", return_value=chains):
-            response = client.post("/chat", json={"user_id": "1", "prompt": "How did I do?"})
-
+    def test_status_200(self, client):
+        with patch.object(api_module, "classify", return_value=_valid_classification(self._sub_requests)), \
+             patch.object(api_module, "execute_chains", return_value=self._chains):
+            response = client.post("/chat", json={"user_id": "1", "prompt": "How did I do last week?"})
         assert response.status_code == 200
 
-    def test_valid_true_in_response(self):
-        classification = _valid_classification(
-            [{"intent": "performance_summary", "focus_metric": None}]
-        )
-        chains = _chain_results([("performance_summary", "Performance Summary")])
-
-        with patch.object(api_module, "classify", return_value=classification), \
-             patch.object(api_module, "execute_chains", return_value=chains):
-            body = client.post("/chat", json={"user_id": "1", "prompt": "How did I do?"}).json()
-
+    def test_valid_true_in_response(self, client):
+        with patch.object(api_module, "classify", return_value=_valid_classification(self._sub_requests)), \
+             patch.object(api_module, "execute_chains", return_value=self._chains):
+            body = client.post("/chat", json={"user_id": "1", "prompt": "How did I do last week?"}).json()
         assert body["valid"] is True
 
-    def test_returns_one_block(self):
-        classification = _valid_classification(
-            [{"intent": "performance_summary", "focus_metric": None}]
-        )
-        chains = _chain_results([("performance_summary", "Performance Summary")])
-
-        with patch.object(api_module, "classify", return_value=classification), \
-             patch.object(api_module, "execute_chains", return_value=chains):
-            body = client.post("/chat", json={"user_id": "1", "prompt": "How did I do?"}).json()
-
+    def test_returns_one_block(self, client):
+        with patch.object(api_module, "classify", return_value=_valid_classification(self._sub_requests)), \
+             patch.object(api_module, "execute_chains", return_value=self._chains):
+            body = client.post("/chat", json={"user_id": "1", "prompt": "How did I do last week?"}).json()
         assert len(body["blocks"]) == 1
 
-    def test_block_has_label_and_response(self):
-        classification = _valid_classification(
-            [{"intent": "performance_summary", "focus_metric": None}]
-        )
-        chains = _chain_results([("performance_summary", "Performance Summary")])
-
-        with patch.object(api_module, "classify", return_value=classification), \
-             patch.object(api_module, "execute_chains", return_value=chains):
-            body = client.post("/chat", json={"user_id": "1", "prompt": "How did I do?"}).json()
-
+    def test_block_has_label_and_response_keys(self, client):
+        with patch.object(api_module, "classify", return_value=_valid_classification(self._sub_requests)), \
+             patch.object(api_module, "execute_chains", return_value=self._chains):
+            body = client.post("/chat", json={"user_id": "1", "prompt": "How did I do last week?"}).json()
         block = body["blocks"][0]
         assert "label" in block
         assert "response" in block
 
-    def test_block_label_matches_intent(self):
-        classification = _valid_classification(
-            [{"intent": "performance_summary", "focus_metric": None}]
-        )
-        chains = _chain_results([("performance_summary", "Performance Summary")])
+    def test_block_label_matches_chain_result(self, client):
+        with patch.object(api_module, "classify", return_value=_valid_classification(self._sub_requests)), \
+             patch.object(api_module, "execute_chains", return_value=self._chains):
+            body = client.post("/chat", json={"user_id": "1", "prompt": "How did I do last week?"}).json()
+        assert body["blocks"][0]["label"] == "Performance Summary (Last 7 Days)"
 
-        with patch.object(api_module, "classify", return_value=classification), \
-             patch.object(api_module, "execute_chains", return_value=chains):
-            body = client.post("/chat", json={"user_id": "1", "prompt": "How did I do?"}).json()
+    def test_block_response_matches_chain_result(self, client):
+        with patch.object(api_module, "classify", return_value=_valid_classification(self._sub_requests)), \
+             patch.object(api_module, "execute_chains", return_value=self._chains):
+            body = client.post("/chat", json={"user_id": "1", "prompt": "How did I do last week?"}).json()
+        assert body["blocks"][0]["response"] == "Response for Performance Summary (Last 7 Days)"
 
-        assert body["blocks"][0]["label"] == "Performance Summary"
+    def test_no_reason_key_for_valid_response(self, client):
+        with patch.object(api_module, "classify", return_value=_valid_classification(self._sub_requests)), \
+             patch.object(api_module, "execute_chains", return_value=self._chains):
+            body = client.post("/chat", json={"user_id": "1", "prompt": "How did I do last week?"}).json()
+        assert "reason" not in body
 
-    def test_chain_executor_called_with_sub_requests(self):
-        sub_requests = [{"intent": "performance_summary", "focus_metric": None}]
-        classification = _valid_classification(sub_requests)
-        chains = _chain_results([("performance_summary", "Performance Summary")])
-
-        with patch.object(api_module, "classify", return_value=classification) as mock_clf, \
-             patch.object(api_module, "execute_chains", return_value=chains) as mock_exec:
-            client.post("/chat", json={"user_id": "1", "prompt": "How did I do?"})
-
-        mock_exec.assert_called_once_with("1", sub_requests)
+    def test_chain_executor_called_with_correct_args(self, client):
+        with patch.object(api_module, "classify", return_value=_valid_classification(self._sub_requests)), \
+             patch.object(api_module, "execute_chains", return_value=self._chains) as mock_exec:
+            client.post("/chat", json={"user_id": "1", "prompt": "How did I do last week?"})
+        mock_exec.assert_called_once_with("1", self._sub_requests)
 
 
 # ---------------------------------------------------------------------------
-# Valid compound request
+# Valid compound request — two sub-requests with different durations
 # ---------------------------------------------------------------------------
 
 class TestChatValidCompoundIntent:
-    def test_returns_multiple_blocks(self):
-        classification = _valid_classification([
-            {"intent": "performance_summary", "focus_metric": None},
-            {"intent": "next_week_plan", "focus_metric": None},
-        ])
-        chains = _chain_results([
-            ("performance_summary", "Performance Summary"),
-            ("next_week_plan", "Next Week Plan"),
-        ])
+    _sub_requests = [
+        {"intent": "performance_summary", "focus_metric": None, "duration_days": 7},
+        {"intent": "next_period_plan",    "focus_metric": None, "duration_days": 30},
+    ]
+    _chains = _chain_results([
+        ("performance_summary", "Performance Summary (Last 7 Days)"),
+        ("next_period_plan",    "Next Period Plan (Last 30 Days)"),
+    ])
 
-        with patch.object(api_module, "classify", return_value=classification), \
-             patch.object(api_module, "execute_chains", return_value=chains):
-            body = client.post("/chat", json={"user_id": "1", "prompt": "How did I do and what's my plan?"}).json()
-
+    def test_returns_two_blocks(self, client):
+        with patch.object(api_module, "classify", return_value=_valid_classification(self._sub_requests)), \
+             patch.object(api_module, "execute_chains", return_value=self._chains):
+            body = client.post("/chat", json={"user_id": "1", "prompt": "How did I do last week and what's my plan?"}).json()
         assert len(body["blocks"]) == 2
 
-    def test_blocks_in_correct_order(self):
-        classification = _valid_classification([
-            {"intent": "performance_summary", "focus_metric": None},
-            {"intent": "next_week_plan", "focus_metric": None},
-        ])
-        chains = _chain_results([
-            ("performance_summary", "Performance Summary"),
-            ("next_week_plan", "Next Week Plan"),
-        ])
+    def test_blocks_in_correct_order(self, client):
+        with patch.object(api_module, "classify", return_value=_valid_classification(self._sub_requests)), \
+             patch.object(api_module, "execute_chains", return_value=self._chains):
+            body = client.post("/chat", json={"user_id": "1", "prompt": "How did I do last week and what's my plan?"}).json()
+        assert body["blocks"][0]["label"] == "Performance Summary (Last 7 Days)"
+        assert body["blocks"][1]["label"] == "Next Period Plan (Last 30 Days)"
 
-        with patch.object(api_module, "classify", return_value=classification), \
-             patch.object(api_module, "execute_chains", return_value=chains):
-            body = client.post("/chat", json={"user_id": "1", "prompt": "How did I do and what's my plan?"}).json()
-
-        assert body["blocks"][0]["label"] == "Performance Summary"
-        assert body["blocks"][1]["label"] == "Next Week Plan"
-
-    def test_valid_true_for_compound(self):
-        classification = _valid_classification([
-            {"intent": "performance_summary", "focus_metric": None},
-            {"intent": "next_week_plan", "focus_metric": None},
-        ])
-        chains = _chain_results([
-            ("performance_summary", "Performance Summary"),
-            ("next_week_plan", "Next Week Plan"),
-        ])
-
-        with patch.object(api_module, "classify", return_value=classification), \
-             patch.object(api_module, "execute_chains", return_value=chains):
-            body = client.post("/chat", json={"user_id": "1", "prompt": "How did I do and what's my plan?"}).json()
-
+    def test_valid_true_for_compound(self, client):
+        with patch.object(api_module, "classify", return_value=_valid_classification(self._sub_requests)), \
+             patch.object(api_module, "execute_chains", return_value=self._chains):
+            body = client.post("/chat", json={"user_id": "1", "prompt": "How did I do last week and what's my plan?"}).json()
         assert body["valid"] is True
+
+    def test_each_block_has_label_and_response(self, client):
+        with patch.object(api_module, "classify", return_value=_valid_classification(self._sub_requests)), \
+             patch.object(api_module, "execute_chains", return_value=self._chains):
+            body = client.post("/chat", json={"user_id": "1", "prompt": "How did I do last week and what's my plan?"}).json()
+        for block in body["blocks"]:
+            assert "label" in block
+            assert "response" in block
+
+    def test_chain_executor_called_with_both_sub_requests(self, client):
+        with patch.object(api_module, "classify", return_value=_valid_classification(self._sub_requests)), \
+             patch.object(api_module, "execute_chains", return_value=self._chains) as mock_exec:
+            client.post("/chat", json={"user_id": "1", "prompt": "How did I do last week and what's my plan?"})
+        mock_exec.assert_called_once_with("1", self._sub_requests)
 
 
 # ---------------------------------------------------------------------------
@@ -185,48 +173,47 @@ class TestChatValidCompoundIntent:
 # ---------------------------------------------------------------------------
 
 class TestChatInvalidRequest:
-    def test_status_200_for_invalid_prompt(self):
-        """Invalid prompts still return 200 — rejection is in the body."""
-        classification = _invalid_classification("That question is off-topic.")
-
-        with patch.object(api_module, "classify", return_value=classification):
+    def test_status_200_for_invalid_prompt(self, client):
+        """Rejected prompts still return HTTP 200 — rejection is in the body."""
+        with patch.object(api_module, "classify", return_value=_invalid_classification("That question is off-topic.")):
             response = client.post("/chat", json={"user_id": "1", "prompt": "What's the weather?"})
-
         assert response.status_code == 200
 
-    def test_valid_false_in_response(self):
-        classification = _invalid_classification("That question is off-topic.")
-
-        with patch.object(api_module, "classify", return_value=classification):
+    def test_valid_false_in_response(self, client):
+        with patch.object(api_module, "classify", return_value=_invalid_classification("That question is off-topic.")):
             body = client.post("/chat", json={"user_id": "1", "prompt": "What's the weather?"}).json()
-
         assert body["valid"] is False
 
-    def test_reason_present_in_response(self):
-        classification = _invalid_classification("That question is off-topic.")
-
-        with patch.object(api_module, "classify", return_value=classification):
+    def test_reason_present_and_correct(self, client):
+        with patch.object(api_module, "classify", return_value=_invalid_classification("That question is off-topic.")):
             body = client.post("/chat", json={"user_id": "1", "prompt": "What's the weather?"}).json()
-
         assert body["reason"] == "That question is off-topic."
 
-    def test_chain_executor_not_called_for_invalid(self):
-        """chain_executor must NOT be called when the classifier rejects."""
-        classification = _invalid_classification("Off-topic.")
+    def test_no_blocks_key_for_invalid(self, client):
+        with patch.object(api_module, "classify", return_value=_invalid_classification("Off-topic.")):
+            body = client.post("/chat", json={"user_id": "1", "prompt": "What's the weather?"}).json()
+        assert "blocks" not in body
 
-        with patch.object(api_module, "classify", return_value=classification), \
+    def test_chain_executor_not_called_for_invalid(self, client):
+        """chain_executor must NOT be called when the classifier rejects."""
+        with patch.object(api_module, "classify", return_value=_invalid_classification("Off-topic.")), \
              patch.object(api_module, "execute_chains") as mock_exec:
             client.post("/chat", json={"user_id": "1", "prompt": "What's the weather?"})
-
         mock_exec.assert_not_called()
 
-    def test_no_blocks_key_for_invalid(self):
-        classification = _invalid_classification("Off-topic.")
+    def test_out_of_range_rejection(self, client):
+        reason = "This app only supports data from the last 30 days."
+        with patch.object(api_module, "classify", return_value=_invalid_classification(reason)):
+            body = client.post("/chat", json={"user_id": "1", "prompt": "What were my metrics 6 months ago?"}).json()
+        assert body["valid"] is False
+        assert body["reason"] == reason
 
-        with patch.object(api_module, "classify", return_value=classification):
-            body = client.post("/chat", json={"user_id": "1", "prompt": "What's the weather?"}).json()
-
-        assert "blocks" not in body
+    def test_cross_user_rejection(self, client):
+        reason = "You can only access your own health data."
+        with patch.object(api_module, "classify", return_value=_invalid_classification(reason)):
+            body = client.post("/chat", json={"user_id": "1", "prompt": "How did user 2 do?"}).json()
+        assert body["valid"] is False
+        assert body["reason"] == reason
 
 
 # ---------------------------------------------------------------------------
@@ -234,17 +221,22 @@ class TestChatInvalidRequest:
 # ---------------------------------------------------------------------------
 
 class TestChatUnknownUser:
-    def test_status_404_for_unknown_user(self):
+    def test_status_404_for_unknown_user(self, client):
         response = client.post("/chat", json={"user_id": "999", "prompt": "How did I do?"})
         assert response.status_code == 404
 
-    def test_error_body_for_unknown_user(self):
+    def test_error_body_for_unknown_user(self, client):
         response = client.post("/chat", json={"user_id": "999", "prompt": "How did I do?"})
         assert response.json() == {"error": "User not found"}
 
-    def test_classifier_not_called_for_unknown_user(self):
+    def test_classifier_not_called_for_unknown_user(self, client):
         """Classifier must NOT be called when the user doesn't exist."""
         with patch.object(api_module, "classify") as mock_clf:
             client.post("/chat", json={"user_id": "999", "prompt": "How did I do?"})
-
         mock_clf.assert_not_called()
+
+    def test_chain_executor_not_called_for_unknown_user(self, client):
+        """chain_executor must NOT be called when the user doesn't exist."""
+        with patch.object(api_module, "execute_chains") as mock_exec:
+            client.post("/chat", json={"user_id": "999", "prompt": "How did I do?"})
+        mock_exec.assert_not_called()

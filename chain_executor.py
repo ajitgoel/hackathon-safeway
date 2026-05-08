@@ -2,10 +2,13 @@
 chain_executor.py — Build and run LangChain LCEL chains concurrently.
 
 For each sub-request from the classifier:
-  1. Look up the intent in prompt_registry to get the ChatPromptTemplate.
-  2. Build an LCEL chain:  prompt | llm
-  3. Run all chains concurrently via RunnableParallel.
-  4. Return an ordered list of {intent, label, response} matching input order.
+  1. Fetch the full 30-day list from data_store and slice the most recent
+     duration_days entries.
+  2. Build a duration_label string (e.g. "the last 7 days").
+  3. Look up the intent in prompt_registry to get the ChatPromptTemplate.
+  4. Build an LCEL chain:  prompt | llm
+  5. Run all chains concurrently via RunnableParallel.
+  6. Return an ordered list of {intent, label, response} matching input order.
 
 DeepSeek is accessed via ChatOpenAI (OpenAI-compatible) with:
   base_url  = "https://api.deepseek.com"
@@ -16,18 +19,42 @@ DeepSeek is accessed via ChatOpenAI (OpenAI-compatible) with:
 import os
 from typing import Optional
 
-from langchain_community.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI
 from langchain_core.runnables import RunnableLambda, RunnableParallel
 
 from data_store import get_optimal_targets, get_user_metrics
-from prompt_registry import INTENT_LABELS, PROMPT_REGISTRY
+from prompt_registry import INTENT_LABEL_TEMPLATES, PROMPT_REGISTRY
+
 
 # ---------------------------------------------------------------------------
-# Type alias for a sub-request (matches classifier output shape)
-# SubRequest = {"intent": str, "focus_metric": str | None}
-# Result     = {"intent": str, "label": str, "response": str}
+# Duration helpers
 # ---------------------------------------------------------------------------
 
+def _duration_label(duration_days: int) -> str:
+    """Convert a duration_days integer to a human-readable label.
+
+    Examples:
+        7  → "the last 7 days"
+        14 → "the last 14 days"
+        30 → "the last 30 days"
+    """
+    return f"the last {duration_days} days"
+
+
+def _build_label(intent: str, duration_days: int) -> str:
+    """Combine the intent's base label with a capitalised duration suffix.
+
+    Examples:
+        ("performance_summary", 7)  → "Performance Summary (Last 7 Days)"
+        ("next_period_plan",    30) → "Next Period Plan (Last 30 Days)"
+    """
+    base = INTENT_LABEL_TEMPLATES[intent]
+    return f"{base} (Last {duration_days} Days)"
+
+
+# ---------------------------------------------------------------------------
+# LLM factory
+# ---------------------------------------------------------------------------
 
 def _build_llm() -> ChatOpenAI:
     """Instantiate the DeepSeek-backed ChatOpenAI model.
@@ -40,12 +67,16 @@ def _build_llm() -> ChatOpenAI:
         raise EnvironmentError("DEEPSEEK_API_KEY environment variable is not set.")
 
     return ChatOpenAI(
-        model_name="deepseek-chat",
-        openai_api_key=api_key,
-        openai_api_base="https://api.deepseek.com",
+        model="deepseek-chat",
+        api_key=api_key,
+        base_url="https://api.deepseek.com",
         temperature=0.7,
     )
 
+
+# ---------------------------------------------------------------------------
+# Public function
+# ---------------------------------------------------------------------------
 
 def execute_chains(
     user_id: str,
@@ -55,7 +86,10 @@ def execute_chains(
 
     Args:
         user_id:      The user whose metrics are injected into every chain.
-        sub_requests: Ordered list of {"intent": str, "focus_metric": str | None}
+        sub_requests: Ordered list of dicts, each with:
+                        intent        (str)
+                        focus_metric  (str | None)
+                        duration_days (int)
                       as returned by the classifier.
 
     Returns:
@@ -70,7 +104,7 @@ def execute_chains(
     if not sub_requests:
         return []
 
-    # Validate all intents up-front before touching the LLM
+    # Validate all intents up-front before touching the LLM or data store.
     for sub_req in sub_requests:
         intent = sub_req["intent"]
         if intent not in PROMPT_REGISTRY:
@@ -79,49 +113,59 @@ def execute_chains(
                 f"Valid intents: {sorted(PROMPT_REGISTRY.keys())}"
             )
 
-    # Fetch data once — injected into every chain input
-    # (raises KeyError for unknown user_id before we touch the LLM)
-    user_metrics = get_user_metrics(user_id)
+    # Fetch the full 30-day list once — each chain will slice its own window.
+    # Raises KeyError for an unknown user_id before we touch the LLM.
+    all_metrics = get_user_metrics(user_id)
     optimal_targets = get_optimal_targets()
 
     llm = _build_llm()
 
-    # Build one LCEL chain per sub-request and record the ordered keys
+    # Build one LCEL chain per sub-request.
+    # Use a positional prefix in the key so the same intent can appear twice
+    # in a compound request without collision.
     ordered_keys: list[str] = []
     chains: dict[str, object] = {}
 
     for idx, sub_req in enumerate(sub_requests):
         intent: str = sub_req["intent"]
         focus_metric: Optional[str] = sub_req.get("focus_metric") or ""
+        duration_days: int = sub_req.get("duration_days", 30)
 
-        # Use a stable key that preserves order even when the same intent
-        # appears more than once in a compound request.
+        # Slice the most recent duration_days entries (data is oldest-first).
+        sliced_metrics = all_metrics[-duration_days:]
+        label = _build_label(intent, duration_days)
+        dur_label = _duration_label(duration_days)
+
         key = f"{idx}__{intent}"
         ordered_keys.append(key)
 
         prompt = PROMPT_REGISTRY[intent]
         chain = prompt | llm
 
-        # Capture inputs in a closure so each chain ignores RunnableParallel's
-        # shared input dict and uses its own pre-filled variables instead.
+        # Capture all inputs in a closure so each chain uses its own
+        # pre-filled variables regardless of RunnableParallel's shared input.
         captured_input = {
-            "user_metrics": str(user_metrics),
+            "user_metrics": str(sliced_metrics),
             "optimal_targets": str(optimal_targets),
             "focus_metric": focus_metric,
+            "duration_label": dur_label,
         }
-        chains[key] = RunnableLambda(lambda _inp, c=chain, ci=captured_input: c.invoke(ci))
+        chains[key] = RunnableLambda(
+            lambda _inp, c=chain, ci=captured_input: c.invoke(ci)
+        )
 
-    # Run all chains concurrently
+    # Run all chains concurrently.
     parallel = RunnableParallel(**chains)
-    # RunnableParallel with bound chains needs an empty input dict
     raw_results: dict = parallel.invoke({})
 
-    # Reassemble in input order, extracting the text content from each AIMessage
+    # Reassemble in input order, extracting text from each AIMessage.
     results: list[dict] = []
     for idx, key in enumerate(ordered_keys):
-        intent = sub_requests[idx]["intent"]
+        sub_req = sub_requests[idx]
+        intent = sub_req["intent"]
+        duration_days = sub_req.get("duration_days", 30)
+
         ai_message = raw_results[key]
-        # AIMessage has a .content attribute; handle both str and AIMessage
         response_text = (
             ai_message.content
             if hasattr(ai_message, "content")
@@ -130,7 +174,7 @@ def execute_chains(
         results.append(
             {
                 "intent": intent,
-                "label": INTENT_LABELS[intent],
+                "label": _build_label(intent, duration_days),
                 "response": response_text,
             }
         )
