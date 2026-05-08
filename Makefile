@@ -1,4 +1,4 @@
-.PHONY: run run-debug test test-file lint install docker-build docker-run deploy secrets logs status smoke-metrics smoke-chat smoke-compound smoke-invalid smoke-performance-summary smoke-next-week-plan smoke-single-metric smoke-metric-comparison smoke-multi-metric-deep-dive smoke-off-topic smoke-out-of-range smoke-cross-user smoke-all help
+.PHONY: run run-debug test test-file lint install docker-build docker-run deploy secrets logs status smoke-metrics smoke-chat smoke-compound smoke-invalid smoke-performance-summary smoke-performance-summary-2w smoke-performance-summary-month smoke-next-week-plan smoke-next-month-plan smoke-single-metric smoke-metric-comparison smoke-multi-metric-deep-dive smoke-off-topic smoke-out-of-range smoke-cross-user smoke-all help
 
 # Load .env if it exists — exports all vars into the make environment
 ifneq (,$(wildcard .env))
@@ -61,30 +61,51 @@ smoke-metrics:
 
 # ── Chat smoke tests by intent ────────────────────────────────────────────────
 
-# performance_summary — "How did I do last week?"
+# performance_summary — various durations
 smoke-chat: smoke-performance-summary
 
 smoke-performance-summary:
-	@echo "\n── performance_summary ──────────────────────────────────────────"
+	@echo "\n── performance_summary (last week) ──────────────────────────────"
 	curl -s -X POST $(BASE_URL)/chat \
 		-H "Content-Type: application/json" \
 		-d '{"user_id": "$(USER_ID)", "prompt": "How did I do last week?"}' \
 		| python3 -m json.tool
 
-# next_week_plan — "What should I focus on next week?"
+smoke-performance-summary-2w:
+	@echo "\n── performance_summary (last 2 weeks) ───────────────────────────"
+	curl -s -X POST $(BASE_URL)/chat \
+		-H "Content-Type: application/json" \
+		-d '{"user_id": "$(USER_ID)", "prompt": "How did I do over the last 2 weeks?"}' \
+		| python3 -m json.tool
+
+smoke-performance-summary-month:
+	@echo "\n── performance_summary (last month) ─────────────────────────────"
+	curl -s -X POST $(BASE_URL)/chat \
+		-H "Content-Type: application/json" \
+		-d '{"user_id": "$(USER_ID)", "prompt": "How did I do last month?"}' \
+		| python3 -m json.tool
+
+# next_period_plan — various durations
 smoke-next-week-plan:
-	@echo "\n── next_week_plan ───────────────────────────────────────────────"
+	@echo "\n── next_period_plan (next week) ─────────────────────────────────"
 	curl -s -X POST $(BASE_URL)/chat \
 		-H "Content-Type: application/json" \
 		-d '{"user_id": "$(USER_ID)", "prompt": "What should I focus on next week?"}' \
 		| python3 -m json.tool
 
-# single_metric_lookup — "How long did I sleep on average?"
-smoke-single-metric:
-	@echo "\n── single_metric_lookup ─────────────────────────────────────────"
+smoke-next-month-plan:
+	@echo "\n── next_period_plan (next month) ────────────────────────────────"
 	curl -s -X POST $(BASE_URL)/chat \
 		-H "Content-Type: application/json" \
-		-d '{"user_id": "$(USER_ID)", "prompt": "How long did I sleep on average last week?"}' \
+		-d '{"user_id": "$(USER_ID)", "prompt": "What should I focus on next month?"}' \
+		| python3 -m json.tool
+
+# single_metric_lookup — with explicit duration
+smoke-single-metric:
+	@echo "\n── single_metric_lookup (last 2 weeks) ──────────────────────────"
+	curl -s -X POST $(BASE_URL)/chat \
+		-H "Content-Type: application/json" \
+		-d '{"user_id": "$(USER_ID)", "prompt": "How long did I sleep on average over the last 2 weeks?"}' \
 		| python3 -m json.tool
 
 # metric_comparison — "How do my steps compare to optimal?"
@@ -103,12 +124,12 @@ smoke-multi-metric-deep-dive:
 		-d '{"user_id": "$(USER_ID)", "prompt": "Break down all my metrics in detail."}' \
 		| python3 -m json.tool
 
-# compound — multiple intents in one message
+# compound — multiple intents with different durations in one message
 smoke-compound:
-	@echo "\n── compound (performance_summary + next_week_plan) ──────────────"
+	@echo "\n── compound (performance_summary last week + next_period_plan next month) ──"
 	curl -s -X POST $(BASE_URL)/chat \
 		-H "Content-Type: application/json" \
-		-d '{"user_id": "$(USER_ID)", "prompt": "How did I do last week and what should I focus on next week?"}' \
+		-d '{"user_id": "$(USER_ID)", "prompt": "How did I do last week and what should I focus on next month?"}' \
 		| python3 -m json.tool
 
 # rejection — off-topic question
@@ -138,7 +159,7 @@ smoke-cross-user:
 		| python3 -m json.tool
 
 # run all chat smoke tests in sequence
-smoke-all: smoke-metrics smoke-performance-summary smoke-next-week-plan smoke-single-metric smoke-metric-comparison smoke-multi-metric-deep-dive smoke-compound smoke-off-topic smoke-out-of-range smoke-cross-user
+smoke-all: smoke-metrics smoke-performance-summary smoke-performance-summary-2w smoke-performance-summary-month smoke-next-week-plan smoke-next-month-plan smoke-single-metric smoke-metric-comparison smoke-multi-metric-deep-dive smoke-compound smoke-off-topic smoke-out-of-range smoke-cross-user
 
 # ── Help ─────────────────────────────────────────────────────────────────────
 
@@ -163,17 +184,20 @@ help:
 	@echo "    make status               Show app status"
 	@echo ""
 	@echo "  Smoke tests (server must be running)"
-	@echo "    make smoke-metrics              GET /metrics for USER_ID (default: 1)"
-	@echo "    make smoke-chat                 POST /chat — performance summary (default)"
-	@echo "    make smoke-performance-summary  POST /chat — performance_summary intent"
-	@echo "    make smoke-next-week-plan       POST /chat — next_week_plan intent"
-	@echo "    make smoke-single-metric        POST /chat — single_metric_lookup intent"
-	@echo "    make smoke-metric-comparison    POST /chat — metric_comparison intent"
-	@echo "    make smoke-multi-metric-deep-dive POST /chat — multi_metric_deep_dive intent"
-	@echo "    make smoke-compound             POST /chat — compound multi-intent request"
-	@echo "    make smoke-off-topic            POST /chat — rejection: off-topic"
-	@echo "    make smoke-out-of-range         POST /chat — rejection: historical data"
-	@echo "    make smoke-cross-user           POST /chat — rejection: cross-user query"
-	@echo "    make smoke-all                  Run all smoke tests in sequence"
+	@echo "    make smoke-metrics                  GET /metrics for USER_ID (default: 1)"
+	@echo "    make smoke-chat                     POST /chat — performance summary last week (default)"
+	@echo "    make smoke-performance-summary      POST /chat — performance_summary, last week (7 days)"
+	@echo "    make smoke-performance-summary-2w   POST /chat — performance_summary, last 2 weeks (14 days)"
+	@echo "    make smoke-performance-summary-month POST /chat — performance_summary, last month (30 days)"
+	@echo "    make smoke-next-week-plan           POST /chat — next_period_plan, next week"
+	@echo "    make smoke-next-month-plan          POST /chat — next_period_plan, next month"
+	@echo "    make smoke-single-metric            POST /chat — single_metric_lookup, last 2 weeks"
+	@echo "    make smoke-metric-comparison        POST /chat — metric_comparison intent"
+	@echo "    make smoke-multi-metric-deep-dive   POST /chat — multi_metric_deep_dive intent"
+	@echo "    make smoke-compound                 POST /chat — compound: different durations per intent"
+	@echo "    make smoke-off-topic                POST /chat — rejection: off-topic"
+	@echo "    make smoke-out-of-range             POST /chat — rejection: historical data (>30 days)"
+	@echo "    make smoke-cross-user               POST /chat — rejection: cross-user query"
+	@echo "    make smoke-all                      Run all smoke tests in sequence"
 	@echo "    Override user: make smoke-chat USER_ID=2"
 	@echo ""
