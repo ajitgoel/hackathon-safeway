@@ -6,14 +6,14 @@
 ## Frameworks & Libraries
 - **FastAPI** — HTTP API framework
 - **LangChain** (`langchain` + `langchain-openai`) — prompt templates, chain construction, parallel execution
-- **DeepSeek** — LLM provider (`deepseek-chat` model)
-  - Classifier: raw HTTP via `requests` (not LangChain)
-  - Chain executor: via `ChatOpenAI` with `base_url="https://api.deepseek.com"` (OpenAI-compatible)
+- **Groq** — LLM provider (`llama-3.3-70b-versatile` model)
+  - Classifier: raw HTTP via `httpx` (not LangChain)
+  - Chain executor: via `ChatOpenAI` with `base_url="https://api.groq.com/openai/v1"` (OpenAI-compatible)
 - **pytest** — test runner
 - **httpx** / FastAPI `TestClient` — API integration testing
 
 ## Environment Variables
-- `DEEPSEEK_API_KEY` — required at runtime; never hardcoded
+- `GROQ_API_KEY` — required at runtime; never hardcoded
 
 ## Common Commands
 
@@ -29,7 +29,7 @@ uvicorn api:app --reload
 ```
 
 ## Key Architectural Constraints
-- Classifier makes a **raw `requests` call** to DeepSeek — not wrapped in LangChain — to keep it independently testable
+- Classifier makes a **raw `httpx` call** to Groq — not wrapped in LangChain — to keep it independently testable
 - LangChain is used **only** for prompt templates, chain construction, and `RunnableParallel` execution
 - Every `POST /chat` is **stateless** — full metrics + targets context is injected per call
 - No database; all data is hardcoded in-memory in `data_store.py`

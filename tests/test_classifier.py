@@ -77,7 +77,7 @@ def _make_async_client_mock(response: MagicMock) -> MagicMock:
 class TestClassifyValidSingleIntentWithDuration:
     @pytest.mark.asyncio
     async def test_returns_valid_true(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         body = {
             "valid": True,
             "reason": None,
@@ -93,7 +93,7 @@ class TestClassifyValidSingleIntentWithDuration:
 
     @pytest.mark.asyncio
     async def test_duration_days_is_7_for_last_week(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         body = {
             "valid": True,
             "reason": None,
@@ -108,7 +108,7 @@ class TestClassifyValidSingleIntentWithDuration:
 
     @pytest.mark.asyncio
     async def test_duration_days_is_14_for_last_2_weeks(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         body = {
             "valid": True,
             "reason": None,
@@ -124,7 +124,7 @@ class TestClassifyValidSingleIntentWithDuration:
 
     @pytest.mark.asyncio
     async def test_duration_days_is_30_for_last_month(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         body = {
             "valid": True,
             "reason": None,
@@ -140,7 +140,7 @@ class TestClassifyValidSingleIntentWithDuration:
 
     @pytest.mark.asyncio
     async def test_single_metric_lookup_has_focus_metric(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         body = {
             "valid": True,
             "reason": None,
@@ -161,7 +161,7 @@ class TestClassifyValidSingleIntentWithDuration:
 class TestClassifyNoDurationDefaultsTo30:
     @pytest.mark.asyncio
     async def test_duration_days_defaults_to_30(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         body = {
             "valid": True,
             "reason": None,
@@ -177,7 +177,7 @@ class TestClassifyNoDurationDefaultsTo30:
 
     @pytest.mark.asyncio
     async def test_next_period_plan_no_duration_defaults_to_30(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         body = {
             "valid": True,
             "reason": None,
@@ -199,7 +199,7 @@ class TestClassifyNoDurationDefaultsTo30:
 class TestClassifyValidCompoundIntent:
     @pytest.mark.asyncio
     async def test_returns_two_sub_requests(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         body = {
             "valid": True,
             "reason": None,
@@ -216,7 +216,7 @@ class TestClassifyValidCompoundIntent:
 
     @pytest.mark.asyncio
     async def test_each_sub_request_has_own_duration_days(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         body = {
             "valid": True,
             "reason": None,
@@ -233,7 +233,7 @@ class TestClassifyValidCompoundIntent:
 
     @pytest.mark.asyncio
     async def test_order_preserved(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         body = {
             "valid": True,
             "reason": None,
@@ -250,7 +250,7 @@ class TestClassifyValidCompoundIntent:
 
     @pytest.mark.asyncio
     async def test_intents_are_correct(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         body = {
             "valid": True,
             "reason": None,
@@ -274,7 +274,7 @@ class TestClassifyValidCompoundIntent:
 class TestClassifyOffTopicRejection:
     @pytest.mark.asyncio
     async def test_returns_valid_false(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         body = {
             "valid": False,
             "reason": "That question is not related to your health metrics.",
@@ -287,7 +287,7 @@ class TestClassifyOffTopicRejection:
 
     @pytest.mark.asyncio
     async def test_reason_is_non_empty_string(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         body = {
             "valid": False,
             "reason": "That question is not related to your health metrics.",
@@ -301,7 +301,7 @@ class TestClassifyOffTopicRejection:
 
     @pytest.mark.asyncio
     async def test_sub_requests_is_empty(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         body = {"valid": False, "reason": "Off-topic.", "sub_requests": []}
         with patch("classifier.httpx.AsyncClient", _make_async_client_mock(_mock_httpx_response(body))):
             result = await classify("1", "What's the weather like today?")
@@ -312,7 +312,7 @@ class TestClassifyOffTopicRejection:
 class TestClassifyOutOfRangeRejection:
     @pytest.mark.asyncio
     async def test_returns_valid_false_with_reason(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         body = {
             "valid": False,
             "reason": "This app only supports data from the last 30 days. Historical data is not available.",
@@ -329,7 +329,7 @@ class TestClassifyOutOfRangeRejection:
 class TestClassifyCrossUserRejection:
     @pytest.mark.asyncio
     async def test_returns_valid_false_with_reason(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         body = {
             "valid": False,
             "reason": "You can only access your own health data.",
@@ -349,8 +349,8 @@ class TestClassifyCrossUserRejection:
 
 class TestClassifyErrorHandling:
     def test_missing_api_key_raises_environment_error(self, monkeypatch):
-        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
-        with pytest.raises(EnvironmentError, match="DEEPSEEK_API_KEY"):
+        monkeypatch.delenv("GROQ_API_KEY", raising=False)
+        with pytest.raises(EnvironmentError, match="GROQ_API_KEY"):
             # classify is async but the key check happens before any await,
             # so we can use pytest.raises in a sync context by calling the
             # coroutine and checking it raises on creation — or just run it.
@@ -359,7 +359,7 @@ class TestClassifyErrorHandling:
 
     @pytest.mark.asyncio
     async def test_non_json_response_raises_runtime_error(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
         mock_resp.json.return_value = {
@@ -371,7 +371,7 @@ class TestClassifyErrorHandling:
 
     @pytest.mark.asyncio
     async def test_http_error_raises_runtime_error(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         with patch("classifier.httpx.AsyncClient", _make_async_client_mock(_mock_httpx_error_response(500))):
-            with pytest.raises(RuntimeError, match="DeepSeek API request failed"):
+            with pytest.raises(RuntimeError, match="Groq API request failed"):
                 await classify("1", "How did I do?")

@@ -14,7 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 # Ensure the API key guard passes before importing the app.
-os.environ.setdefault("DEEPSEEK_API_KEY", "test-key")
+os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 from api import app  # noqa: E402
 

@@ -1,11 +1,11 @@
 """
 classifier.py — Validate and decompose a user prompt into typed sub-requests.
 
-Makes a single raw HTTP call to the DeepSeek API (not wrapped in LangChain)
+Makes a single raw HTTP call to the Groq API (not wrapped in LangChain)
 so the classifier stays independent and easily unit-testable via mocked responses.
 
 Uses httpx.AsyncClient for non-blocking I/O so the FastAPI event loop is not
-stalled during the network round-trip to DeepSeek.
+stalled during the network round-trip to Groq.
 
 Public interface:
     classify(user_id: str, prompt: str) -> ClassifierResult   (async)
@@ -30,8 +30,8 @@ VALID_INTENTS = frozenset(
     }
 )
 
-DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
-DEEPSEEK_MODEL = "deepseek-chat"
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL = "llama-3.3-70b-versatile"
 
 # ---------------------------------------------------------------------------
 # System prompt
@@ -116,13 +116,13 @@ async def classify(user_id: str, prompt: str) -> dict:
             sub_requests (list of {intent: str, focus_metric: str | None, duration_days: int})
 
     Raises:
-        EnvironmentError: If DEEPSEEK_API_KEY is not set.
+        EnvironmentError: If GROQ_API_KEY is not set.
         RuntimeError:     If the API call fails or returns unparseable JSON.
     """
-    api_key = os.environ.get("DEEPSEEK_API_KEY")
+    api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         raise EnvironmentError(
-            "DEEPSEEK_API_KEY environment variable is not set."
+            "GROQ_API_KEY environment variable is not set."
         )
 
     user_message = (
@@ -131,7 +131,7 @@ async def classify(user_id: str, prompt: str) -> dict:
     )
 
     payload = {
-        "model": DEEPSEEK_MODEL,
+        "model": GROQ_MODEL,
         "messages": [
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": user_message},
@@ -142,7 +142,7 @@ async def classify(user_id: str, prompt: str) -> dict:
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(
-                DEEPSEEK_API_URL,
+                GROQ_API_URL,
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
@@ -151,7 +151,7 @@ async def classify(user_id: str, prompt: str) -> dict:
             )
             response.raise_for_status()
     except httpx.HTTPError as exc:
-        raise RuntimeError(f"DeepSeek API request failed: {exc}") from exc
+        raise RuntimeError(f"Groq API request failed: {exc}") from exc
 
     raw_content = response.json()["choices"][0]["message"]["content"].strip()
 

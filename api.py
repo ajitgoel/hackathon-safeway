@@ -16,7 +16,7 @@ Performance design:
   - The ChatOpenAI instance is a module-level singleton in chain_executor — no
     per-request setup overhead.
 
-Startup check: DEEPSEEK_API_KEY must be present in the environment or the app
+Startup check: GROQ_API_KEY must be present in the environment or the app
 raises EnvironmentError immediately rather than failing at the first request.
 """
 
@@ -40,9 +40,9 @@ from response_assembler import assemble
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if not os.environ.get("DEEPSEEK_API_KEY"):
+    if not os.environ.get("GROQ_API_KEY"):
         raise EnvironmentError(
-            "DEEPSEEK_API_KEY environment variable is not set. "
+            "GROQ_API_KEY environment variable is not set. "
             "Set it before starting the server."
         )
     yield

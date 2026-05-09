@@ -15,7 +15,7 @@ Covers:
 - Correct number of chains is passed to RunnableParallel
 - Each sub-request uses its own duration_days (compound request)
 - Unknown intent raises ValueError before any LLM call
-- Missing DEEPSEEK_API_KEY raises EnvironmentError
+- Missing GROQ_API_KEY raises EnvironmentError
 - Unknown user_id raises KeyError
 - Empty sub-requests list returns []
 """
@@ -88,7 +88,7 @@ THREE_REQUESTS = [
 class TestSingleSubRequest:
     @pytest.mark.asyncio
     async def test_returns_list_with_one_item(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         mock_parallel = _make_parallel_mock(
             {"0__performance_summary": "You did great!"}
         )
@@ -101,7 +101,7 @@ class TestSingleSubRequest:
 
     @pytest.mark.asyncio
     async def test_result_has_correct_intent(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         mock_parallel = _make_parallel_mock(
             {"0__performance_summary": "You did great!"}
         )
@@ -114,7 +114,7 @@ class TestSingleSubRequest:
 
     @pytest.mark.asyncio
     async def test_result_has_correct_response_text(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         mock_parallel = _make_parallel_mock(
             {"0__performance_summary": "You did great!"}
         )
@@ -133,7 +133,7 @@ class TestSingleSubRequest:
 class TestLabelIncludesDuration:
     @pytest.mark.asyncio
     async def test_7_day_label(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         mock_parallel = _make_parallel_mock({"0__performance_summary": "resp"})
         with patch.object(ce_module, "_get_llm", return_value=_mock_llm()), \
              patch.object(ce_module, "RunnableParallel", return_value=mock_parallel), \
@@ -144,7 +144,7 @@ class TestLabelIncludesDuration:
 
     @pytest.mark.asyncio
     async def test_14_day_label(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         mock_parallel = _make_parallel_mock({"0__metric_comparison": "resp"})
         with patch.object(ce_module, "_get_llm", return_value=_mock_llm()), \
              patch.object(ce_module, "RunnableParallel", return_value=mock_parallel), \
@@ -155,7 +155,7 @@ class TestLabelIncludesDuration:
 
     @pytest.mark.asyncio
     async def test_30_day_label(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         mock_parallel = _make_parallel_mock({"0__multi_metric_deep_dive": "resp"})
         with patch.object(ce_module, "_get_llm", return_value=_mock_llm()), \
              patch.object(ce_module, "RunnableParallel", return_value=mock_parallel), \
@@ -166,7 +166,7 @@ class TestLabelIncludesDuration:
 
     @pytest.mark.asyncio
     async def test_compound_each_block_has_own_duration_label(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         mock_parallel = _make_parallel_mock({
             "0__performance_summary": "summary resp",
             "1__next_period_plan":    "plan resp",
@@ -190,7 +190,7 @@ class TestDataSlicing:
         Run execute_chains with a mock LLM and capture every captured_input
         dict that gets passed to chain.invoke().
         """
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
 
         chain_inputs: list[dict] = []
 
@@ -272,7 +272,7 @@ class TestDataSlicing:
 class TestMultipleSubRequests:
     @pytest.mark.asyncio
     async def test_returns_correct_number_of_results(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         mock_parallel = _make_parallel_mock({
             "0__performance_summary": "Summary response",
             "1__next_period_plan":    "Plan response",
@@ -286,7 +286,7 @@ class TestMultipleSubRequests:
 
     @pytest.mark.asyncio
     async def test_results_are_in_input_order(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         mock_parallel = _make_parallel_mock({
             "0__performance_summary": "Summary response",
             "1__next_period_plan":    "Plan response",
@@ -301,7 +301,7 @@ class TestMultipleSubRequests:
 
     @pytest.mark.asyncio
     async def test_correct_number_of_chains_passed_to_parallel(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         captured_kwargs: dict = {}
 
         def capture_parallel(**kwargs):
@@ -326,7 +326,7 @@ class TestMultipleSubRequests:
 
     @pytest.mark.asyncio
     async def test_three_sub_requests_ordering_preserved(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         mock_parallel = _make_parallel_mock({
             "0__performance_summary":  "Summary",
             "1__single_metric_lookup": "Sleep was 6.5h",
@@ -343,7 +343,7 @@ class TestMultipleSubRequests:
 
     @pytest.mark.asyncio
     async def test_response_text_matches_per_intent(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         mock_parallel = _make_parallel_mock({
             "0__performance_summary": "Summary response",
             "1__next_period_plan":    "Plan response",
@@ -364,7 +364,7 @@ class TestMultipleSubRequests:
 class TestEmptySubRequests:
     @pytest.mark.asyncio
     async def test_empty_list_returns_empty_list(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         results = await execute_chains("1", [])
         assert results == []
 
@@ -376,7 +376,7 @@ class TestEmptySubRequests:
 class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_unknown_intent_raises_value_error(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         with pytest.raises(ValueError, match="Unknown intent"):
             await execute_chains("1", [
                 {"intent": "nonexistent_intent", "focus_metric": None, "duration_days": 7}
@@ -385,7 +385,7 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_unknown_intent_raises_before_llm_call(self, monkeypatch):
         """Intent validation must happen before _get_llm is called."""
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         with patch.object(ce_module, "_get_llm") as mock_get:
             with pytest.raises(ValueError):
                 await execute_chains("1", [
@@ -395,15 +395,15 @@ class TestErrorHandling:
 
     @pytest.mark.asyncio
     async def test_missing_api_key_raises_environment_error(self, monkeypatch):
-        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+        monkeypatch.delenv("GROQ_API_KEY", raising=False)
         # Reset the singleton so it re-checks the env var
         ce_module._llm = None
-        with pytest.raises(EnvironmentError, match="DEEPSEEK_API_KEY"):
+        with pytest.raises(EnvironmentError, match="GROQ_API_KEY"):
             await execute_chains("1", SINGLE_7_DAYS)
 
     @pytest.mark.asyncio
     async def test_unknown_user_raises_key_error(self, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         with patch.object(ce_module, "_get_llm", return_value=_mock_llm()):
             with pytest.raises(KeyError):
                 await execute_chains("999", SINGLE_7_DAYS)

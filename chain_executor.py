@@ -10,10 +10,10 @@ For each sub-request from the classifier:
   5. Run all chains concurrently via RunnableParallel.
   6. Return an ordered list of {intent, label, response} matching input order.
 
-DeepSeek is accessed via ChatOpenAI (OpenAI-compatible) with:
-  base_url  = "https://api.deepseek.com"
-  api_key   = DEEPSEEK_API_KEY environment variable
-  model     = "deepseek-chat"
+Groq is accessed via ChatOpenAI (OpenAI-compatible) with:
+  base_url  = "https://api.groq.com/openai/v1"
+  api_key   = GROQ_API_KEY environment variable
+  model     = "llama-3.3-70b-versatile"
 
 Performance notes:
   - The ChatOpenAI instance is created once at module level and reused across
@@ -45,17 +45,17 @@ def _get_llm() -> ChatOpenAI:
     """Return the module-level ChatOpenAI singleton, creating it on first call.
 
     Raises:
-        EnvironmentError: If DEEPSEEK_API_KEY is not set.
+        EnvironmentError: If GROQ_API_KEY is not set.
     """
     global _llm
     if _llm is None:
-        api_key = os.environ.get("DEEPSEEK_API_KEY")
+        api_key = os.environ.get("GROQ_API_KEY")
         if not api_key:
-            raise EnvironmentError("DEEPSEEK_API_KEY environment variable is not set.")
+            raise EnvironmentError("GROQ_API_KEY environment variable is not set.")
         _llm = ChatOpenAI(
-            model="deepseek-chat",
+            model="llama-3.3-70b-versatile",
             api_key=api_key,
-            base_url="https://api.deepseek.com",
+            base_url="https://api.groq.com/openai/v1",
             temperature=0.7,
         )
     return _llm
@@ -114,7 +114,7 @@ async def execute_chains(
         in the same order as sub_requests.
 
     Raises:
-        EnvironmentError: If DEEPSEEK_API_KEY is not set.
+        EnvironmentError: If GROQ_API_KEY is not set.
         ValueError:       If an intent is not found in PROMPT_REGISTRY.
         KeyError:         If user_id is not found in the data store.
     """

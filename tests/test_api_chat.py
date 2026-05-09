@@ -21,7 +21,7 @@ Covers:
 import os
 
 # Set the API key before importing api so the startup guard passes.
-os.environ.setdefault("DEEPSEEK_API_KEY", "test-key")
+os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 from unittest.mock import AsyncMock, patch
 import pytest
