@@ -4,14 +4,17 @@ classifier.py — Validate and decompose a user prompt into typed sub-requests.
 Makes a single raw HTTP call to the DeepSeek API (not wrapped in LangChain)
 so the classifier stays independent and easily unit-testable via mocked responses.
 
+Uses httpx.AsyncClient for non-blocking I/O so the FastAPI event loop is not
+stalled during the network round-trip to DeepSeek.
+
 Public interface:
-    classify(user_id: str, prompt: str) -> ClassifierResult
+    classify(user_id: str, prompt: str) -> ClassifierResult   (async)
 """
 
 import json
 import os
 
-import requests
+import httpx
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -96,8 +99,11 @@ Rules:
 # Public function
 # ---------------------------------------------------------------------------
 
-def classify(user_id: str, prompt: str) -> dict:
+async def classify(user_id: str, prompt: str) -> dict:
     """Classify a user prompt into typed sub-requests via a raw DeepSeek API call.
+
+    Uses httpx.AsyncClient so the FastAPI event loop is not blocked during the
+    network round-trip.
 
     Args:
         user_id: The ID of the requesting user (included for context).
@@ -134,17 +140,17 @@ def classify(user_id: str, prompt: str) -> dict:
     }
 
     try:
-        response = requests.post(
-            DEEPSEEK_API_URL,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-            timeout=30,
-        )
-        response.raise_for_status()
-    except requests.RequestException as exc:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                DEEPSEEK_API_URL,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            response.raise_for_status()
+    except httpx.HTTPError as exc:
         raise RuntimeError(f"DeepSeek API request failed: {exc}") from exc
 
     raw_content = response.json()["choices"][0]["message"]["content"].strip()

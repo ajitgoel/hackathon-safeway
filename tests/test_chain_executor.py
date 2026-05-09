@@ -3,6 +3,10 @@ Integration tests for chain_executor.py.
 
 LangChain chains and RunnableParallel are mocked — no real LLM calls made.
 
+execute_chains() is now async, so all tests use pytest.mark.asyncio.
+The LLM is now a module-level singleton accessed via _get_llm(); tests patch
+_get_llm instead of the removed _build_llm.
+
 Covers:
 - Single sub-request returns [{intent, label, response}]
 - Label includes the duration suffix (e.g. "Performance Summary (Last 7 Days)")
@@ -16,7 +20,7 @@ Covers:
 - Empty sub-requests list returns []
 """
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -82,34 +86,43 @@ THREE_REQUESTS = [
 # ---------------------------------------------------------------------------
 
 class TestSingleSubRequest:
-    def test_returns_list_with_one_item(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_returns_list_with_one_item(self, monkeypatch):
         monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
         mock_parallel = _make_parallel_mock(
             {"0__performance_summary": "You did great!"}
         )
-        with patch.object(ce_module, "_build_llm", return_value=_mock_llm()), \
-             patch.object(ce_module, "RunnableParallel", return_value=mock_parallel):
-            results = execute_chains("1", SINGLE_7_DAYS)
+        with patch.object(ce_module, "_get_llm", return_value=_mock_llm()), \
+             patch.object(ce_module, "RunnableParallel", return_value=mock_parallel), \
+             patch.object(ce_module, "asyncio") as mock_asyncio:
+            mock_asyncio.to_thread = AsyncMock(return_value=mock_parallel.invoke.return_value)
+            results = await execute_chains("1", SINGLE_7_DAYS)
         assert len(results) == 1
 
-    def test_result_has_correct_intent(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_result_has_correct_intent(self, monkeypatch):
         monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
         mock_parallel = _make_parallel_mock(
             {"0__performance_summary": "You did great!"}
         )
-        with patch.object(ce_module, "_build_llm", return_value=_mock_llm()), \
-             patch.object(ce_module, "RunnableParallel", return_value=mock_parallel):
-            results = execute_chains("1", SINGLE_7_DAYS)
+        with patch.object(ce_module, "_get_llm", return_value=_mock_llm()), \
+             patch.object(ce_module, "RunnableParallel", return_value=mock_parallel), \
+             patch.object(ce_module, "asyncio") as mock_asyncio:
+            mock_asyncio.to_thread = AsyncMock(return_value=mock_parallel.invoke.return_value)
+            results = await execute_chains("1", SINGLE_7_DAYS)
         assert results[0]["intent"] == "performance_summary"
 
-    def test_result_has_correct_response_text(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_result_has_correct_response_text(self, monkeypatch):
         monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
         mock_parallel = _make_parallel_mock(
             {"0__performance_summary": "You did great!"}
         )
-        with patch.object(ce_module, "_build_llm", return_value=_mock_llm()), \
-             patch.object(ce_module, "RunnableParallel", return_value=mock_parallel):
-            results = execute_chains("1", SINGLE_7_DAYS)
+        with patch.object(ce_module, "_get_llm", return_value=_mock_llm()), \
+             patch.object(ce_module, "RunnableParallel", return_value=mock_parallel), \
+             patch.object(ce_module, "asyncio") as mock_asyncio:
+            mock_asyncio.to_thread = AsyncMock(return_value=mock_parallel.invoke.return_value)
+            results = await execute_chains("1", SINGLE_7_DAYS)
         assert results[0]["response"] == "You did great!"
 
 
@@ -118,82 +131,78 @@ class TestSingleSubRequest:
 # ---------------------------------------------------------------------------
 
 class TestLabelIncludesDuration:
-    def test_7_day_label(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_7_day_label(self, monkeypatch):
         monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
-        mock_parallel = _make_parallel_mock(
-            {"0__performance_summary": "resp"}
-        )
-        with patch.object(ce_module, "_build_llm", return_value=_mock_llm()), \
-             patch.object(ce_module, "RunnableParallel", return_value=mock_parallel):
-            results = execute_chains("1", SINGLE_7_DAYS)
+        mock_parallel = _make_parallel_mock({"0__performance_summary": "resp"})
+        with patch.object(ce_module, "_get_llm", return_value=_mock_llm()), \
+             patch.object(ce_module, "RunnableParallel", return_value=mock_parallel), \
+             patch.object(ce_module, "asyncio") as mock_asyncio:
+            mock_asyncio.to_thread = AsyncMock(return_value=mock_parallel.invoke.return_value)
+            results = await execute_chains("1", SINGLE_7_DAYS)
         assert results[0]["label"] == "Performance Summary (Last 7 Days)"
 
-    def test_14_day_label(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_14_day_label(self, monkeypatch):
         monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
-        mock_parallel = _make_parallel_mock(
-            {"0__metric_comparison": "resp"}
-        )
-        with patch.object(ce_module, "_build_llm", return_value=_mock_llm()), \
-             patch.object(ce_module, "RunnableParallel", return_value=mock_parallel):
-            results = execute_chains("1", SINGLE_14_DAYS)
+        mock_parallel = _make_parallel_mock({"0__metric_comparison": "resp"})
+        with patch.object(ce_module, "_get_llm", return_value=_mock_llm()), \
+             patch.object(ce_module, "RunnableParallel", return_value=mock_parallel), \
+             patch.object(ce_module, "asyncio") as mock_asyncio:
+            mock_asyncio.to_thread = AsyncMock(return_value=mock_parallel.invoke.return_value)
+            results = await execute_chains("1", SINGLE_14_DAYS)
         assert results[0]["label"] == "Metric Comparison (Last 14 Days)"
 
-    def test_30_day_label(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_30_day_label(self, monkeypatch):
         monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
-        mock_parallel = _make_parallel_mock(
-            {"0__multi_metric_deep_dive": "resp"}
-        )
-        with patch.object(ce_module, "_build_llm", return_value=_mock_llm()), \
-             patch.object(ce_module, "RunnableParallel", return_value=mock_parallel):
-            results = execute_chains("1", SINGLE_30_DAYS)
+        mock_parallel = _make_parallel_mock({"0__multi_metric_deep_dive": "resp"})
+        with patch.object(ce_module, "_get_llm", return_value=_mock_llm()), \
+             patch.object(ce_module, "RunnableParallel", return_value=mock_parallel), \
+             patch.object(ce_module, "asyncio") as mock_asyncio:
+            mock_asyncio.to_thread = AsyncMock(return_value=mock_parallel.invoke.return_value)
+            results = await execute_chains("1", SINGLE_30_DAYS)
         assert results[0]["label"] == "Deep Dive (Last 30 Days)"
 
-    def test_compound_each_block_has_own_duration_label(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_compound_each_block_has_own_duration_label(self, monkeypatch):
         monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
         mock_parallel = _make_parallel_mock({
             "0__performance_summary": "summary resp",
             "1__next_period_plan":    "plan resp",
         })
-        with patch.object(ce_module, "_build_llm", return_value=_mock_llm()), \
-             patch.object(ce_module, "RunnableParallel", return_value=mock_parallel):
-            results = execute_chains("1", COMPOUND_7_AND_30)
+        with patch.object(ce_module, "_get_llm", return_value=_mock_llm()), \
+             patch.object(ce_module, "RunnableParallel", return_value=mock_parallel), \
+             patch.object(ce_module, "asyncio") as mock_asyncio:
+            mock_asyncio.to_thread = AsyncMock(return_value=mock_parallel.invoke.return_value)
+            results = await execute_chains("1", COMPOUND_7_AND_30)
         assert results[0]["label"] == "Performance Summary (Last 7 Days)"
         assert results[1]["label"] == "Next Period Plan (Last 30 Days)"
 
 
 # ---------------------------------------------------------------------------
 # Data slicing — verify the correct number of days is passed to the chain
-#
-# Strategy: patch RunnableLambda so that when the parallel mock calls
-# .invoke({}), the wrapped lambda actually executes and we intercept the
-# chain.invoke(captured_input) call to record what was passed.
 # ---------------------------------------------------------------------------
 
 class TestDataSlicing:
-    def _run_and_capture(self, monkeypatch, sub_requests, parallel_keys):
+    async def _run_and_capture(self, monkeypatch, sub_requests):
         """
         Run execute_chains with a mock LLM and capture every captured_input
         dict that gets passed to chain.invoke().
-
-        Returns the list of captured dicts (one per sub-request).
         """
         monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
 
         chain_inputs: list[dict] = []
 
-        # Build a mock chain whose .invoke() records its argument.
         def make_mock_chain():
             mock_chain = MagicMock()
             def record_invoke(inp):
                 chain_inputs.append(inp)
                 return _make_ai_message("resp")
             mock_chain.invoke.side_effect = record_invoke
-            # prompt | llm  →  mock_chain
-            mock_chain.__ror__ = MagicMock(return_value=mock_chain)
             mock_chain.__or__ = MagicMock(return_value=mock_chain)
             return mock_chain
 
-        # Patch PROMPT_REGISTRY so every template's pipe returns our spy chain.
         mock_chain = make_mock_chain()
         mock_template = MagicMock()
         mock_template.__or__ = MagicMock(return_value=mock_chain)
@@ -203,59 +212,52 @@ class TestDataSlicing:
             "metric_comparison", "multi_metric_deep_dive",
         ]}
 
-        # Use a real RunnableParallel so the lambdas actually execute.
-        # Each lambda calls chain.invoke(captured_input) which we intercept above.
-        with patch.object(ce_module, "_build_llm", return_value=_mock_llm()), \
-             patch.object(ce_module, "PROMPT_REGISTRY", mock_registry):
-            execute_chains("1", sub_requests)
+        # Use real RunnableParallel so lambdas execute; wrap invoke in to_thread
+        async def real_to_thread(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        with patch.object(ce_module, "_get_llm", return_value=_mock_llm()), \
+             patch.object(ce_module, "PROMPT_REGISTRY", mock_registry), \
+             patch.object(ce_module, "asyncio") as mock_asyncio:
+            mock_asyncio.to_thread = real_to_thread
+            await execute_chains("1", sub_requests)
 
         return chain_inputs
 
-    def test_7_day_slice_passes_7_entries(self, monkeypatch):
-        """The chain input for a 7-day request must contain exactly 7 daily entries."""
+    @pytest.mark.asyncio
+    async def test_7_day_slice_passes_7_entries(self, monkeypatch):
         import ast
-        chain_inputs = self._run_and_capture(
-            monkeypatch, SINGLE_7_DAYS, ["0__performance_summary"]
-        )
+        chain_inputs = await self._run_and_capture(monkeypatch, SINGLE_7_DAYS)
         assert len(chain_inputs) == 1
         sliced = ast.literal_eval(chain_inputs[0]["user_metrics"])
         assert len(sliced) == 7
 
-    def test_7_day_slice_is_the_most_recent_7_entries(self, monkeypatch):
-        """The 7-day slice must be the last 7 entries (most recent), not the first."""
+    @pytest.mark.asyncio
+    async def test_7_day_slice_is_the_most_recent_7_entries(self, monkeypatch):
         import ast
         from data_store import get_user_metrics as real_get
         expected_slice = real_get("1")[-7:]
 
-        chain_inputs = self._run_and_capture(
-            monkeypatch, SINGLE_7_DAYS, ["0__performance_summary"]
-        )
+        chain_inputs = await self._run_and_capture(monkeypatch, SINGLE_7_DAYS)
         sliced = ast.literal_eval(chain_inputs[0]["user_metrics"])
         assert sliced == expected_slice
 
-    def test_duration_label_in_chain_input(self, monkeypatch):
-        """The chain input must contain the correct duration_label string."""
-        chain_inputs = self._run_and_capture(
-            monkeypatch, SINGLE_7_DAYS, ["0__performance_summary"]
-        )
+    @pytest.mark.asyncio
+    async def test_duration_label_in_chain_input(self, monkeypatch):
+        chain_inputs = await self._run_and_capture(monkeypatch, SINGLE_7_DAYS)
         assert chain_inputs[0]["duration_label"] == "the last 7 days"
 
-    def test_14_day_slice_passes_14_entries(self, monkeypatch):
-        """A 14-day request must slice exactly 14 entries."""
+    @pytest.mark.asyncio
+    async def test_14_day_slice_passes_14_entries(self, monkeypatch):
         import ast
-        chain_inputs = self._run_and_capture(
-            monkeypatch, SINGLE_14_DAYS, ["0__metric_comparison"]
-        )
+        chain_inputs = await self._run_and_capture(monkeypatch, SINGLE_14_DAYS)
         sliced = ast.literal_eval(chain_inputs[0]["user_metrics"])
         assert len(sliced) == 14
 
-    def test_compound_each_sub_request_gets_own_slice(self, monkeypatch):
-        """In a compound request, each chain must receive its own duration slice."""
+    @pytest.mark.asyncio
+    async def test_compound_each_sub_request_gets_own_slice(self, monkeypatch):
         import ast
-        chain_inputs = self._run_and_capture(
-            monkeypatch, COMPOUND_7_AND_30,
-            ["0__performance_summary", "1__next_period_plan"]
-        )
+        chain_inputs = await self._run_and_capture(monkeypatch, COMPOUND_7_AND_30)
         assert len(chain_inputs) == 2
         slice_0 = ast.literal_eval(chain_inputs[0]["user_metrics"])
         slice_1 = ast.literal_eval(chain_inputs[1]["user_metrics"])
@@ -268,69 +270,89 @@ class TestDataSlicing:
 # ---------------------------------------------------------------------------
 
 class TestMultipleSubRequests:
-    def test_returns_correct_number_of_results(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_returns_correct_number_of_results(self, monkeypatch):
         monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
         mock_parallel = _make_parallel_mock({
             "0__performance_summary": "Summary response",
             "1__next_period_plan":    "Plan response",
         })
-        with patch.object(ce_module, "_build_llm", return_value=_mock_llm()), \
-             patch.object(ce_module, "RunnableParallel", return_value=mock_parallel):
-            results = execute_chains("1", COMPOUND_7_AND_30)
+        with patch.object(ce_module, "_get_llm", return_value=_mock_llm()), \
+             patch.object(ce_module, "RunnableParallel", return_value=mock_parallel), \
+             patch.object(ce_module, "asyncio") as mock_asyncio:
+            mock_asyncio.to_thread = AsyncMock(return_value=mock_parallel.invoke.return_value)
+            results = await execute_chains("1", COMPOUND_7_AND_30)
         assert len(results) == 2
 
-    def test_results_are_in_input_order(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_results_are_in_input_order(self, monkeypatch):
         monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
         mock_parallel = _make_parallel_mock({
             "0__performance_summary": "Summary response",
             "1__next_period_plan":    "Plan response",
         })
-        with patch.object(ce_module, "_build_llm", return_value=_mock_llm()), \
-             patch.object(ce_module, "RunnableParallel", return_value=mock_parallel):
-            results = execute_chains("1", COMPOUND_7_AND_30)
+        with patch.object(ce_module, "_get_llm", return_value=_mock_llm()), \
+             patch.object(ce_module, "RunnableParallel", return_value=mock_parallel), \
+             patch.object(ce_module, "asyncio") as mock_asyncio:
+            mock_asyncio.to_thread = AsyncMock(return_value=mock_parallel.invoke.return_value)
+            results = await execute_chains("1", COMPOUND_7_AND_30)
         assert results[0]["intent"] == "performance_summary"
         assert results[1]["intent"] == "next_period_plan"
 
-    def test_correct_number_of_chains_passed_to_parallel(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_correct_number_of_chains_passed_to_parallel(self, monkeypatch):
         monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
         captured_kwargs: dict = {}
 
         def capture_parallel(**kwargs):
             captured_kwargs.update(kwargs)
-            return _make_parallel_mock({
+            mock = _make_parallel_mock({
                 "0__performance_summary": "Summary",
                 "1__next_period_plan":    "Plan",
             })
+            return mock
 
-        with patch.object(ce_module, "_build_llm", return_value=_mock_llm()), \
-             patch.object(ce_module, "RunnableParallel", side_effect=capture_parallel):
-            execute_chains("1", COMPOUND_7_AND_30)
+        with patch.object(ce_module, "_get_llm", return_value=_mock_llm()), \
+             patch.object(ce_module, "RunnableParallel", side_effect=capture_parallel), \
+             patch.object(ce_module, "asyncio") as mock_asyncio:
+            parallel_result = {
+                "0__performance_summary": _make_ai_message("Summary"),
+                "1__next_period_plan":    _make_ai_message("Plan"),
+            }
+            mock_asyncio.to_thread = AsyncMock(return_value=parallel_result)
+            await execute_chains("1", COMPOUND_7_AND_30)
 
         assert len(captured_kwargs) == 2
 
-    def test_three_sub_requests_ordering_preserved(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_three_sub_requests_ordering_preserved(self, monkeypatch):
         monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
         mock_parallel = _make_parallel_mock({
             "0__performance_summary":  "Summary",
             "1__single_metric_lookup": "Sleep was 6.5h",
             "2__next_period_plan":     "Plan",
         })
-        with patch.object(ce_module, "_build_llm", return_value=_mock_llm()), \
-             patch.object(ce_module, "RunnableParallel", return_value=mock_parallel):
-            results = execute_chains("1", THREE_REQUESTS)
+        with patch.object(ce_module, "_get_llm", return_value=_mock_llm()), \
+             patch.object(ce_module, "RunnableParallel", return_value=mock_parallel), \
+             patch.object(ce_module, "asyncio") as mock_asyncio:
+            mock_asyncio.to_thread = AsyncMock(return_value=mock_parallel.invoke.return_value)
+            results = await execute_chains("1", THREE_REQUESTS)
         assert results[0]["intent"] == "performance_summary"
         assert results[1]["intent"] == "single_metric_lookup"
         assert results[2]["intent"] == "next_period_plan"
 
-    def test_response_text_matches_per_intent(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_response_text_matches_per_intent(self, monkeypatch):
         monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
         mock_parallel = _make_parallel_mock({
             "0__performance_summary": "Summary response",
             "1__next_period_plan":    "Plan response",
         })
-        with patch.object(ce_module, "_build_llm", return_value=_mock_llm()), \
-             patch.object(ce_module, "RunnableParallel", return_value=mock_parallel):
-            results = execute_chains("1", COMPOUND_7_AND_30)
+        with patch.object(ce_module, "_get_llm", return_value=_mock_llm()), \
+             patch.object(ce_module, "RunnableParallel", return_value=mock_parallel), \
+             patch.object(ce_module, "asyncio") as mock_asyncio:
+            mock_asyncio.to_thread = AsyncMock(return_value=mock_parallel.invoke.return_value)
+            results = await execute_chains("1", COMPOUND_7_AND_30)
         assert results[0]["response"] == "Summary response"
         assert results[1]["response"] == "Plan response"
 
@@ -340,9 +362,10 @@ class TestMultipleSubRequests:
 # ---------------------------------------------------------------------------
 
 class TestEmptySubRequests:
-    def test_empty_list_returns_empty_list(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_empty_list_returns_empty_list(self, monkeypatch):
         monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
-        results = execute_chains("1", [])
+        results = await execute_chains("1", [])
         assert results == []
 
 
@@ -351,30 +374,36 @@ class TestEmptySubRequests:
 # ---------------------------------------------------------------------------
 
 class TestErrorHandling:
-    def test_unknown_intent_raises_value_error(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_unknown_intent_raises_value_error(self, monkeypatch):
         monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
         with pytest.raises(ValueError, match="Unknown intent"):
-            execute_chains("1", [
+            await execute_chains("1", [
                 {"intent": "nonexistent_intent", "focus_metric": None, "duration_days": 7}
             ])
 
-    def test_unknown_intent_raises_before_llm_call(self, monkeypatch):
-        """Intent validation must happen before _build_llm is called."""
+    @pytest.mark.asyncio
+    async def test_unknown_intent_raises_before_llm_call(self, monkeypatch):
+        """Intent validation must happen before _get_llm is called."""
         monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
-        with patch.object(ce_module, "_build_llm") as mock_build:
+        with patch.object(ce_module, "_get_llm") as mock_get:
             with pytest.raises(ValueError):
-                execute_chains("1", [
+                await execute_chains("1", [
                     {"intent": "bad_intent", "focus_metric": None, "duration_days": 7}
                 ])
-            mock_build.assert_not_called()
+            mock_get.assert_not_called()
 
-    def test_missing_api_key_raises_environment_error(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_missing_api_key_raises_environment_error(self, monkeypatch):
         monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+        # Reset the singleton so it re-checks the env var
+        ce_module._llm = None
         with pytest.raises(EnvironmentError, match="DEEPSEEK_API_KEY"):
-            execute_chains("1", SINGLE_7_DAYS)
+            await execute_chains("1", SINGLE_7_DAYS)
 
-    def test_unknown_user_raises_key_error(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_unknown_user_raises_key_error(self, monkeypatch):
         monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
-        with patch.object(ce_module, "_build_llm", return_value=_mock_llm()):
+        with patch.object(ce_module, "_get_llm", return_value=_mock_llm()):
             with pytest.raises(KeyError):
-                execute_chains("999", SINGLE_7_DAYS)
+                await execute_chains("999", SINGLE_7_DAYS)

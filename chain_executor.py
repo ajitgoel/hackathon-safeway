@@ -14,8 +14,16 @@ DeepSeek is accessed via ChatOpenAI (OpenAI-compatible) with:
   base_url  = "https://api.deepseek.com"
   api_key   = DEEPSEEK_API_KEY environment variable
   model     = "deepseek-chat"
+
+Performance notes:
+  - The ChatOpenAI instance is created once at module level and reused across
+    all requests (connection pool reuse, no per-request setup overhead).
+  - execute_chains is async so it runs on the FastAPI event loop without
+    blocking the threadpool.
+  - RunnableParallel fans out all sub-request chains concurrently.
 """
 
+import asyncio
 import os
 from typing import Optional
 
@@ -24,6 +32,33 @@ from langchain_core.runnables import RunnableLambda, RunnableParallel
 
 from data_store import get_optimal_targets, get_user_metrics
 from prompt_registry import INTENT_LABEL_TEMPLATES, PROMPT_REGISTRY
+
+
+# ---------------------------------------------------------------------------
+# Module-level LLM singleton — instantiated once, reused across all requests.
+# ---------------------------------------------------------------------------
+
+_llm: Optional[ChatOpenAI] = None
+
+
+def _get_llm() -> ChatOpenAI:
+    """Return the module-level ChatOpenAI singleton, creating it on first call.
+
+    Raises:
+        EnvironmentError: If DEEPSEEK_API_KEY is not set.
+    """
+    global _llm
+    if _llm is None:
+        api_key = os.environ.get("DEEPSEEK_API_KEY")
+        if not api_key:
+            raise EnvironmentError("DEEPSEEK_API_KEY environment variable is not set.")
+        _llm = ChatOpenAI(
+            model="deepseek-chat",
+            api_key=api_key,
+            base_url="https://api.deepseek.com",
+            temperature=0.7,
+        )
+    return _llm
 
 
 # ---------------------------------------------------------------------------
@@ -53,36 +88,18 @@ def _build_label(intent: str, duration_days: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# LLM factory
-# ---------------------------------------------------------------------------
-
-def _build_llm() -> ChatOpenAI:
-    """Instantiate the DeepSeek-backed ChatOpenAI model.
-
-    Raises:
-        EnvironmentError: If DEEPSEEK_API_KEY is not set.
-    """
-    api_key = os.environ.get("DEEPSEEK_API_KEY")
-    if not api_key:
-        raise EnvironmentError("DEEPSEEK_API_KEY environment variable is not set.")
-
-    return ChatOpenAI(
-        model="deepseek-chat",
-        api_key=api_key,
-        base_url="https://api.deepseek.com",
-        temperature=0.7,
-    )
-
-
-# ---------------------------------------------------------------------------
 # Public function
 # ---------------------------------------------------------------------------
 
-def execute_chains(
+async def execute_chains(
     user_id: str,
     sub_requests: list[dict],
 ) -> list[dict]:
     """Run one LCEL chain per sub-request concurrently via RunnableParallel.
+
+    Async so the FastAPI event loop is not blocked while waiting for DeepSeek
+    responses. RunnableParallel fans out all chains in parallel, so a compound
+    request with N sub-requests takes roughly the same time as a single one.
 
     Args:
         user_id:      The user whose metrics are injected into every chain.
@@ -113,12 +130,10 @@ def execute_chains(
                 f"Valid intents: {sorted(PROMPT_REGISTRY.keys())}"
             )
 
-    # Fetch the full 30-day list once — each chain will slice its own window.
-    # Raises KeyError for an unknown user_id before we touch the LLM.
+    # Fetch data and get the LLM singleton — both are fast/local operations.
     all_metrics = get_user_metrics(user_id)
     optimal_targets = get_optimal_targets()
-
-    llm = _build_llm()
+    llm = _get_llm()
 
     # Build one LCEL chain per sub-request.
     # Use a positional prefix in the key so the same intent can appear twice
@@ -133,7 +148,6 @@ def execute_chains(
 
         # Slice the most recent duration_days entries (data is oldest-first).
         sliced_metrics = all_metrics[-duration_days:]
-        label = _build_label(intent, duration_days)
         dur_label = _duration_label(duration_days)
 
         key = f"{idx}__{intent}"
@@ -154,9 +168,10 @@ def execute_chains(
             lambda _inp, c=chain, ci=captured_input: c.invoke(ci)
         )
 
-    # Run all chains concurrently.
+    # Run all chains concurrently in a threadpool so the async event loop
+    # is not blocked by LangChain's synchronous invoke calls.
     parallel = RunnableParallel(**chains)
-    raw_results: dict = parallel.invoke({})
+    raw_results: dict = await asyncio.to_thread(parallel.invoke, {})
 
     # Reassemble in input order, extracting text from each AIMessage.
     results: list[dict] = []
