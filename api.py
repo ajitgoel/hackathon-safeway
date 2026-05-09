@@ -24,6 +24,7 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -49,6 +50,23 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Weekly Health Tracker", lifespan=lifespan)
+
+# ---------------------------------------------------------------------------
+# CORS — origins are configured via the ALLOWED_ORIGINS environment variable
+# as a comma-separated list, e.g.:
+#   ALLOWED_ORIGINS=http://localhost:4300,https://your-prod-domain.com
+# Defaults to localhost:4300 if not set.
+# ---------------------------------------------------------------------------
+
+_raw_origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:4300")
+_allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_allowed_origins,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
 
 
 # ---------------------------------------------------------------------------
